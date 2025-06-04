@@ -4,10 +4,14 @@ import plotly.express as px
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, timedelta
+import json
 
 # --- CONFIGURACION DE GOOGLE SHEETS ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales.json", scope)
+
+# Leer credenciales desde Streamlit Secrets
+creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
 # --- CARGA DE DATOS ---
@@ -16,6 +20,7 @@ try:
 except Exception as e:
     st.error("❌ Error accediendo al archivo de Google Sheets. Verifica que el ID sea correcto y que esté compartido con el correo del servicio.")
     st.stop()
+
 
 productos_df = pd.DataFrame(sheet.worksheet("productos").get_all_records())
 bodega1_df = pd.DataFrame(sheet.worksheet("inventario_bodega1").get_all_records())
