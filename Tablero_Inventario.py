@@ -193,6 +193,8 @@ elif pestana == "Generar Pedido":
 
             fecha_pedido = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             pedidos_sheet = sheet.worksheet("pedidos")
+            movimientos_sheet = sheet.worksheet("movimientos")
+            inv_bodega2_ws = sheet.worksheet("inventario_bodega2")
 
             for item in st.session_state.pedido_actual:
                 cod = item["Codigo_Barras"]
@@ -202,14 +204,26 @@ elif pestana == "Generar Pedido":
                 disponible_b2 = bodega2_df.loc[bodega2_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
                 restante = cantidad_solicitada - disponible_b2
 
-                # Registrar en la hoja pedidos lo que se puede cubrir con Bodega 2
                 cubierto_b2 = min(disponible_b2, cantidad_solicitada)
                 if cubierto_b2 > 0:
+                    # Registrar en 'pedidos'
                     pedidos_sheet.append_row([
                         fecha_pedido, pedido_id, cliente, cod, detalle, cubierto_b2, "Bodega 2"
                     ])
 
-                # Determinar cantidades a pintar y fabricar
+                    # Registrar en 'movimientos'
+                    movimientos_sheet.append_row([
+                        fecha_pedido, cod, "Salida", cubierto_b2, "Bodega 2", usuario, f"Pedido {pedido_id} - {cliente}"
+                    ])
+
+                    # Actualizar inventario bodega2 en Google Sheets
+                    cell = inv_bodega2_ws.find(cod)
+                    if cell:
+                        row_idx = cell.row
+                        current_qty = int(inv_bodega2_ws.cell(row_idx, 4).value)  # Columna 'Cantidad'
+                        new_qty = current_qty - cubierto_b2
+                        inv_bodega2_ws.update_cell(row_idx, 4, new_qty)
+
                 disponible_b1 = bodega1_df.loc[bodega1_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
                 pintar = min(restante, disponible_b1) if restante > 0 else 0
                 fabricar = max(restante - disponible_b1, 0) if restante > 0 else 0
@@ -243,10 +257,10 @@ elif pestana == "Generar Pedido":
                     "Orden de Fabricación": fabricar
                 })
 
-            # Mostrar vistas resumen
             if resumen_pedido:
                 st.markdown("### 📋 Resumen del Pedido")
-                st.dataframe(pd.DataFrame(resumen_pedido))
+                resumen_df = pd.DataFrame(resumen_pedido)
+                st.dataframe(resumen_df)
 
             if orden_pintado:
                 st.markdown("### 🖌️ Orden de Pintado")
@@ -256,6 +270,7 @@ elif pestana == "Generar Pedido":
                 st.markdown("### 🏗️ Orden de Fabricación")
                 st.dataframe(pd.DataFrame(orden_fabricacion))
 
-            st.success("✅ Pedido registrado exitosamente.")
+            st.success("✅ Pedido registrado y bodega actualizada.")
             st.session_state.pedido_actual = []
+
 #python -m streamlit run c:/Users/sacor/Downloads/Tablero_Inventario.py
