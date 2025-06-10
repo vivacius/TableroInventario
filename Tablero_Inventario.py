@@ -151,11 +151,13 @@ elif pestana == "Alertas":
     st.dataframe(sin_mov2[['Codigo_Barras', 'Detalle', 'Cantidad']])
     
 # --- PESTAÑA 5: Generar pedido ---
+# --- PESTAÑA 5: Generar pedido ---
 elif pestana == "Generar Pedido":
     st.subheader("📝 Generar Pedido")
 
     pedido_id = st.text_input("Identificador del pedido")
     cliente = st.text_input("Nombre del cliente")
+    usuario = st.text_input("Usuario que genera el pedido")  # <-- CAMPO NUEVO
 
     st.markdown("### Buscar y agregar productos")
 
@@ -187,6 +189,10 @@ elif pestana == "Generar Pedido":
         st.dataframe(pd.DataFrame(st.session_state.pedido_actual))
 
         if st.button("Finalizar pedido"):
+            if not usuario:
+                st.warning("⚠️ Debes ingresar el nombre del usuario antes de finalizar el pedido.")
+                st.stop()
+
             orden_pintado = []
             orden_fabricacion = []
             resumen_pedido = []
@@ -262,15 +268,7 @@ elif pestana == "Generar Pedido":
                 resumen_df = pd.DataFrame(resumen_pedido)
                 st.dataframe(resumen_df)
 
-            if orden_pintado:
-                st.markdown("### 🖌️ Orden de Pintado")
-                st.dataframe(pd.DataFrame(orden_pintado))
-
-            if orden_fabricacion:
-                st.markdown("### 🏗️ Orden de Fabricación")
-                st.dataframe(pd.DataFrame(orden_fabricacion))
-
-            st.success("✅ Pedido registrado y bodega actualizada.")
+            st.success("✅ Pedido registrado exitosamente.")
             st.session_state.pedido_actual = []
 
 #python -m streamlit run c:/Users/sacor/Downloads/Tablero_Inventario.py
