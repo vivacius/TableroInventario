@@ -190,7 +190,8 @@ elif pestana == "Generar Pedido":
         cliente = st.text_input("Cliente", "Consumidor final")
 
         if st.button("Finalizar pedido"):
-            fecha_pedido = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            fecha_pedido = datetime.now()
+            fecha_pedido_str = fecha_pedido.strftime("%Y-%m-%d %H:%M:%S")
             pedido_id = f"PED-{datetime.now().strftime('%Y%m%d%H%M%S')}"
             resumen_pedido = []
             orden_pintado = []
