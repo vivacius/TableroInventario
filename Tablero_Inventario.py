@@ -239,7 +239,7 @@ elif pestana == "Generar Pedido":
                 st.markdown("### 🏗️ Orden de Fabricación")
                 st.dataframe(pd.DataFrame(orden_fabricacion))
 
-                        pedidos_sheet = sheet.worksheet("pedidos")
+                        pedidos_ws = sheet.worksheet("pedidos")
             fecha_pedido = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             for item in st.session_state.pedido_actual:
@@ -263,15 +263,15 @@ elif pestana == "Generar Pedido":
                 fabricar = max(restante - disponible_b1, 0)
 
                 if disponible_b2 > 0:
-                    pedidos_sheet.append_row([
+                    pedidos_ws.append_row([
                         fecha_pedido, pedido_id, cliente, cod, detalle, disponible_b2, "Bodega 2"
                     ])
                 if pintar > 0:
-                    pedidos_sheet.append_row([
+                    pedidos_ws.append_row([
                         fecha_pedido, pedido_id, cliente, cod, detalle, pintar, "Pintado"
                     ])
                 if fabricar > 0:
-                    pedidos_sheet.append_row([
+                    pedidos_ws.append_row([
                         fecha_pedido, pedido_id, cliente, cod, detalle, fabricar, "Fabricación"
                     ])
 
