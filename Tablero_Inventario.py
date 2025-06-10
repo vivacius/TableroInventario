@@ -168,7 +168,6 @@ elif pestana == "Generar Pedido":
         st.session_state.pedido_actual = []
 
     if agregar and cod_o_nombre:
-        # Buscar producto
         filtro = productos_df[
             productos_df['Codigo_Barras'].astype(str).str.contains(cod_o_nombre, case=False) |
             productos_df['Detalle'].str.contains(cod_o_nombre, case=False)
@@ -190,6 +189,7 @@ elif pestana == "Generar Pedido":
         if st.button("Finalizar pedido"):
             orden_pintado = []
             orden_fabricacion = []
+            resumen_pedido = []
 
             fecha_pedido = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             pedidos_sheet = sheet.worksheet("pedidos")
@@ -202,24 +202,17 @@ elif pestana == "Generar Pedido":
                 disponible_b2 = bodega2_df.loc[bodega2_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
                 restante = cantidad_solicitada - disponible_b2
 
-                # Si se cubre completamente con Bodega 2
-                if restante <= 0:
+                # Registrar en la hoja pedidos lo que se puede cubrir con Bodega 2
+                cubierto_b2 = min(disponible_b2, cantidad_solicitada)
+                if cubierto_b2 > 0:
                     pedidos_sheet.append_row([
-                        fecha_pedido, pedido_id, cliente, cod, detalle, cantidad_solicitada, "Bodega 2"
-                    ])
-                    st.success(f"{detalle}: Pedido cubierto completamente con Bodega 2.")
-                    continue
-
-                # Agrega lo disponible en Bodega 2
-                if disponible_b2 > 0:
-                    pedidos_sheet.append_row([
-                        fecha_pedido, pedido_id, cliente, cod, detalle, disponible_b2, "Bodega 2"
+                        fecha_pedido, pedido_id, cliente, cod, detalle, cubierto_b2, "Bodega 2"
                     ])
 
-                # Pintado y fabricación
+                # Determinar cantidades a pintar y fabricar
                 disponible_b1 = bodega1_df.loc[bodega1_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
-                pintar = min(restante, disponible_b1)
-                fabricar = max(restante - disponible_b1, 0)
+                pintar = min(restante, disponible_b1) if restante > 0 else 0
+                fabricar = max(restante - disponible_b1, 0) if restante > 0 else 0
 
                 if pintar > 0:
                     orden_pintado.append({
@@ -230,7 +223,6 @@ elif pestana == "Generar Pedido":
                     pedidos_sheet.append_row([
                         fecha_pedido, pedido_id, cliente, cod, detalle, pintar, "Pintado"
                     ])
-                    st.warning(f"{detalle}: Se debe pintar {pintar} unidad(es).")
 
                 if fabricar > 0:
                     orden_fabricacion.append({
@@ -241,7 +233,20 @@ elif pestana == "Generar Pedido":
                     pedidos_sheet.append_row([
                         fecha_pedido, pedido_id, cliente, cod, detalle, fabricar, "Fabricación"
                     ])
-                    st.error(f"{detalle}: Se debe fabricar {fabricar} unidad(es).")
+
+                resumen_pedido.append({
+                    "Código": cod,
+                    "Detalle": detalle,
+                    "Cantidad Pedida": cantidad_solicitada,
+                    "Disponible Bodega 2": disponible_b2,
+                    "Pendiente por Pintar": pintar,
+                    "Orden de Fabricación": fabricar
+                })
+
+            # Mostrar vistas resumen
+            if resumen_pedido:
+                st.markdown("### 📋 Resumen del Pedido")
+                st.dataframe(pd.DataFrame(resumen_pedido))
 
             if orden_pintado:
                 st.markdown("### 🖌️ Orden de Pintado")
@@ -253,6 +258,4 @@ elif pestana == "Generar Pedido":
 
             st.success("✅ Pedido registrado exitosamente.")
             st.session_state.pedido_actual = []
-
-
 #python -m streamlit run c:/Users/sacor/Downloads/Tablero_Inventario.py
