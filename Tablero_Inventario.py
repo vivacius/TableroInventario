@@ -154,128 +154,129 @@ elif pestana == "Alertas":
 elif pestana == "Generar Pedido":
     st.subheader("📝 Generar Pedido")
 
+    pedido_id = st.text_input("Identificador del pedido")
+    cliente = st.text_input("Nombre del cliente")
+
+    st.markdown("### Buscar y agregar productos")
+
     with st.form("form_pedido"):
-        col1, col2 = st.columns(2)
-        with col1:
-            pedido_id = st.text_input("🔖 ID del Pedido", max_chars=20)
-        with col2:
-            cliente = st.text_input("👤 Nombre del Cliente")
-
-        st.markdown("### ➕ Agregar productos al pedido")
-        search_term = st.text_input("🔍 Buscar producto por código o nombre")
-
-        if search_term:
-            resultado = productos_df[
-                productos_df.apply(lambda row: search_term.lower() in str(row["Codigo_Barras"]).lower() or
-                                               search_term.lower() in str(row["Detalle"]).lower(), axis=1)
-            ]
-            st.dataframe(resultado[["Codigo_Barras", "Detalle"]])
-
-        cod_barra = st.text_input("Código de Barras del producto a agregar")
+        cod_o_nombre = st.text_input("Buscar por código o nombre")
         cantidad = st.number_input("Cantidad solicitada", min_value=1, step=1)
+        agregar = st.form_submit_button("Agregar al pedido")
 
-        agregar = st.form_submit_button("Agregar Producto")
+    if 'pedido_actual' not in st.session_state:
+        st.session_state.pedido_actual = []
 
-    if "pedido_actual" not in st.session_state:
-        st.session_state["pedido_actual"] = []
-
-    if agregar:
-        prod = productos_df[productos_df["Codigo_Barras"] == cod_barra]
-        if not prod.empty:
-            detalle = prod.iloc[0]["Detalle"]
-            st.session_state["pedido_actual"].append({
-                "Codigo_Barras": cod_barra,
-                "Detalle": detalle,
+    if agregar and cod_o_nombre:
+        # Buscar producto
+        filtro = productos_df[
+            productos_df['Codigo_Barras'].astype(str).str.contains(cod_o_nombre, case=False) |
+            productos_df['Detalle'].str.contains(cod_o_nombre, case=False)
+        ]
+        if not filtro.empty:
+            producto = filtro.iloc[0]
+            st.session_state.pedido_actual.append({
+                "Codigo_Barras": producto["Codigo_Barras"],
+                "Detalle": producto["Detalle"],
                 "Cantidad": cantidad
             })
-            st.success(f"Producto {detalle} agregado al pedido.")
         else:
-            st.warning("⚠️ Código de producto no encontrado.")
+            st.warning("Producto no encontrado.")
 
-    # Mostrar resumen del pedido
-    if st.session_state["pedido_actual"]:
-        st.markdown("### 🧾 Resumen del Pedido")
-        resumen_df = pd.DataFrame(st.session_state["pedido_actual"])
-        st.dataframe(resumen_df)
+    # Mostrar productos del pedido actual
+    if st.session_state.pedido_actual:
+        st.markdown("### Productos del pedido")
+        st.dataframe(pd.DataFrame(st.session_state.pedido_actual))
 
-        if st.button("Procesar Pedido"):
-            orden_pintura = []
+        if st.button("Finalizar pedido"):
+            orden_pintado = []
             orden_fabricacion = []
-            movimientos_generados = []
 
-            for item in st.session_state["pedido_actual"]:
+            for item in st.session_state.pedido_actual:
                 cod = item["Codigo_Barras"]
                 detalle = item["Detalle"]
-                cant = item["Cantidad"]
+                cantidad_solicitada = item["Cantidad"]
 
-                stock_b2 = bodega2_df.loc[bodega2_df["Codigo_Barras"] == cod, "Cantidad"].sum()
-                usar_b2 = min(stock_b2, cant)
-                restante = cant - usar_b2
+                disponible_b2 = bodega2_df.loc[bodega2_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
+                restante = cantidad_solicitada - disponible_b2
 
-                if usar_b2 > 0:
-                    movimientos_generados.append((cod, detalle, usar_b2, "Pedido desde Bodega 2"))
+                if restante <= 0:
+                    st.success(f"{detalle}: Pedido cubierto completamente con Bodega 2.")
+                    continue
 
-                if restante > 0:
-                    stock_b1 = bodega1_df.loc[bodega1_df["Codigo_Barras"] == cod, "Cantidad"].sum()
-                    usar_b1 = min(stock_b1, restante)
-                    if usar_b1 > 0:
-                        orden_pintura.append({"Codigo_Barras": cod, "Detalle": detalle, "Cantidad": usar_b1})
-                        restante -= usar_b1
+                disponible_b1 = bodega1_df.loc[bodega1_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
 
-                    if restante > 0:
-                        orden_fabricacion.append({"Codigo_Barras": cod, "Detalle": detalle, "Cantidad": restante})
+                if disponible_b1 >= restante:
+                    orden_pintado.append({
+                        "Codigo_Barras": cod,
+                        "Detalle": detalle,
+                        "Cantidad": restante
+                    })
+                    st.warning(f"{detalle}: Se debe pintar {restante} unidad(es).")
+                else:
+                    if disponible_b1 > 0:
+                        orden_pintado.append({
+                            "Codigo_Barras": cod,
+                            "Detalle": detalle,
+                            "Cantidad": disponible_b1
+                        })
+                        restante -= disponible_b1
+                        st.warning(f"{detalle}: Se debe pintar {disponible_b1} unidad(es).")
 
-            st.markdown("### 📦 Resultado del Pedido")
-            if movimientos_generados:
-                st.write("✅ Productos entregados desde Bodega 2:")
-                st.dataframe(pd.DataFrame(movimientos_generados, columns=["Codigo_Barras", "Detalle", "Cantidad", "Movimiento"]))
+                    orden_fabricacion.append({
+                        "Codigo_Barras": cod,
+                        "Detalle": detalle,
+                        "Cantidad": restante
+                    })
+                    st.error(f"{detalle}: Se debe fabricar {restante} unidad(es).")
 
-            if orden_pintura:
-                st.warning("🎨 Orden de Pintura Generada:")
-                st.dataframe(pd.DataFrame(orden_pintura))
+            # Mostrar resumen de órdenes
+            if orden_pintado:
+                st.markdown("### 🖌️ Orden de Pintado")
+                st.dataframe(pd.DataFrame(orden_pintado))
 
             if orden_fabricacion:
-                st.error("🏭 Orden de Fabricación Generada:")
+                st.markdown("### 🏗️ Orden de Fabricación")
                 st.dataframe(pd.DataFrame(orden_fabricacion))
 
-            st.success("Pedido procesado correctamente.")
-# --- GUARDAR PEDIDO EN GOOGLE SHEETS ---
+                        pedidos_sheet = sheet.worksheet("pedidos")
+            fecha_pedido = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-def guardar_pedido_en_google_sheets(pedido_id, cliente, fuente, lista_items):
-    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    filas = []
-    for item in lista_items:
-        filas.append([
-            pedido_id,
-            cliente,
-            ahora,
-            item["Codigo_Barras"],
-            item["Detalle"],
-            item["Cantidad"],
-            fuente
-        ])
-    existing_data = sheet.worksheet("pedidos").get_all_values()
-    start_row = len(existing_data) + 1
-    sheet.worksheet("pedidos").update(f"A{start_row}", filas)
+            for item in st.session_state.pedido_actual:
+                cod = item["Codigo_Barras"]
+                detalle = item["Detalle"]
+                cantidad_solicitada = item["Cantidad"]
 
-# Guardar automáticamente el pedido (solo si hay algo que guardar)
-if movimientos_generados or orden_pintura or orden_fabricacion:
-    try:
-        if movimientos_generados:
-            guardar_pedido_en_google_sheets(pedido_id, cliente, "Bodega 2", [
-                {"Codigo_Barras": cod, "Detalle": det, "Cantidad": cant}
-                for cod, det, cant, _ in movimientos_generados
-            ])
+                disponible_b2 = bodega2_df.loc[bodega2_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
+                restante = cantidad_solicitada - disponible_b2
 
-        if orden_pintura:
-            guardar_pedido_en_google_sheets(pedido_id, cliente, "Pintura", orden_pintura)
+                # Si todo se puede cubrir desde Bodega 2
+                if restante <= 0:
+                    pedidos_sheet.append_row([
+                        fecha_pedido, pedido_id, cliente, cod, detalle, cantidad_solicitada, "Bodega 2"
+                    ])
+                    continue
 
-        if orden_fabricacion:
-            guardar_pedido_en_google_sheets(pedido_id, cliente, "Fabricación", orden_fabricacion)
+                # Si se requiere pintar
+                disponible_b1 = bodega1_df.loc[bodega1_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
+                pintar = min(restante, disponible_b1)
+                fabricar = max(restante - disponible_b1, 0)
 
-        st.success("✅ Pedido guardado correctamente en la hoja 'pedidos'.")
-    except Exception as e:
-        st.error(f"❌ Error guardando el pedido: {e}")
+                if disponible_b2 > 0:
+                    pedidos_sheet.append_row([
+                        fecha_pedido, pedido_id, cliente, cod, detalle, disponible_b2, "Bodega 2"
+                    ])
+                if pintar > 0:
+                    pedidos_sheet.append_row([
+                        fecha_pedido, pedido_id, cliente, cod, detalle, pintar, "Pintado"
+                    ])
+                if fabricar > 0:
+                    pedidos_sheet.append_row([
+                        fecha_pedido, pedido_id, cliente, cod, detalle, fabricar, "Fabricación"
+                    ])
 
+
+            # Resetear sesión
+            st.session_state.pedido_actual = []
 
 #python -m streamlit run c:/Users/sacor/Downloads/Tablero_Inventario.py
