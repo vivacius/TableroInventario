@@ -183,7 +183,6 @@ elif pestana == "Generar Pedido":
         else:
             st.warning("Producto no encontrado.")
 
-    # Mostrar productos del pedido actual
     if st.session_state.pedido_actual:
         st.markdown("### Productos del pedido")
         st.dataframe(pd.DataFrame(st.session_state.pedido_actual))
@@ -192,6 +191,9 @@ elif pestana == "Generar Pedido":
             orden_pintado = []
             orden_fabricacion = []
 
+            fecha_pedido = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            pedidos_sheet = sheet.worksheet("pedidos")
+
             for item in st.session_state.pedido_actual:
                 cod = item["Codigo_Barras"]
                 detalle = item["Detalle"]
@@ -200,37 +202,47 @@ elif pestana == "Generar Pedido":
                 disponible_b2 = bodega2_df.loc[bodega2_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
                 restante = cantidad_solicitada - disponible_b2
 
+                # Si se cubre completamente con Bodega 2
                 if restante <= 0:
+                    pedidos_sheet.append_row([
+                        fecha_pedido, pedido_id, cliente, cod, detalle, cantidad_solicitada, "Bodega 2"
+                    ])
                     st.success(f"{detalle}: Pedido cubierto completamente con Bodega 2.")
                     continue
 
-                disponible_b1 = bodega1_df.loc[bodega1_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
+                # Agrega lo disponible en Bodega 2
+                if disponible_b2 > 0:
+                    pedidos_sheet.append_row([
+                        fecha_pedido, pedido_id, cliente, cod, detalle, disponible_b2, "Bodega 2"
+                    ])
 
-                if disponible_b1 >= restante:
+                # Pintado y fabricación
+                disponible_b1 = bodega1_df.loc[bodega1_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
+                pintar = min(restante, disponible_b1)
+                fabricar = max(restante - disponible_b1, 0)
+
+                if pintar > 0:
                     orden_pintado.append({
                         "Codigo_Barras": cod,
                         "Detalle": detalle,
-                        "Cantidad": restante
+                        "Cantidad": pintar
                     })
-                    st.warning(f"{detalle}: Se debe pintar {restante} unidad(es).")
-                else:
-                    if disponible_b1 > 0:
-                        orden_pintado.append({
-                            "Codigo_Barras": cod,
-                            "Detalle": detalle,
-                            "Cantidad": disponible_b1
-                        })
-                        restante -= disponible_b1
-                        st.warning(f"{detalle}: Se debe pintar {disponible_b1} unidad(es).")
+                    pedidos_sheet.append_row([
+                        fecha_pedido, pedido_id, cliente, cod, detalle, pintar, "Pintado"
+                    ])
+                    st.warning(f"{detalle}: Se debe pintar {pintar} unidad(es).")
 
+                if fabricar > 0:
                     orden_fabricacion.append({
                         "Codigo_Barras": cod,
                         "Detalle": detalle,
-                        "Cantidad": restante
+                        "Cantidad": fabricar
                     })
-                    st.error(f"{detalle}: Se debe fabricar {restante} unidad(es).")
+                    pedidos_sheet.append_row([
+                        fecha_pedido, pedido_id, cliente, cod, detalle, fabricar, "Fabricación"
+                    ])
+                    st.error(f"{detalle}: Se debe fabricar {fabricar} unidad(es).")
 
-            # Mostrar resumen de órdenes
             if orden_pintado:
                 st.markdown("### 🖌️ Orden de Pintado")
                 st.dataframe(pd.DataFrame(orden_pintado))
@@ -239,44 +251,8 @@ elif pestana == "Generar Pedido":
                 st.markdown("### 🏗️ Orden de Fabricación")
                 st.dataframe(pd.DataFrame(orden_fabricacion))
 
-                        #pedidos_ws = sheet.worksheet("pedidos")
-            fecha_pedido = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            for item in st.session_state.pedido_actual:
-                cod = item["Codigo_Barras"]
-                detalle = item["Detalle"]
-                cantidad_solicitada = item["Cantidad"]
-
-                disponible_b2 = bodega2_df.loc[bodega2_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
-                restante = cantidad_solicitada - disponible_b2
-
-                # Si todo se puede cubrir desde Bodega 2
-                if restante <= 0:
-                    pedidos_sheet.append_row([
-                        fecha_pedido, pedido_id, cliente, cod, detalle, cantidad_solicitada, "Bodega 2"
-                    ])
-                    continue
-
-                # Si se requiere pintar
-                disponible_b1 = bodega1_df.loc[bodega1_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
-                pintar = min(restante, disponible_b1)
-                fabricar = max(restante - disponible_b1, 0)
-
-                if disponible_b2 > 0:
-                    pedidos_ws.append_row([
-                        fecha_pedido, pedido_id, cliente, cod, detalle, disponible_b2, "Bodega 2"
-                    ])
-                if pintar > 0:
-                    pedidos_ws.append_row([
-                        fecha_pedido, pedido_id, cliente, cod, detalle, pintar, "Pintado"
-                    ])
-                if fabricar > 0:
-                    pedidos_ws.append_row([
-                        fecha_pedido, pedido_id, cliente, cod, detalle, fabricar, "Fabricación"
-                    ])
-
-
-            # Resetear sesión
+            st.success("✅ Pedido registrado exitosamente.")
             st.session_state.pedido_actual = []
+
 
 #python -m streamlit run c:/Users/sacor/Downloads/Tablero_Inventario.py
