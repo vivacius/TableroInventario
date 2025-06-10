@@ -150,16 +150,15 @@ elif pestana == "Alertas":
     st.write("**Sin movimiento reciente - Bodega 2:**")
     st.dataframe(sin_mov2[['Codigo_Barras', 'Detalle', 'Cantidad']])
     
-# --- PESTAÑA 5: Generar pedido ---
-# --- PESTAÑA 5: Generar pedido ---
+# --- PESTAÑA 5: GENERAR PEDIDO ---
 elif pestana == "Generar Pedido":
     st.subheader("📝 Generar Pedido")
 
     pedido_id = st.text_input("Identificador del pedido")
     cliente = st.text_input("Nombre del cliente")
-    usuario = st.text_input("Usuario que genera el pedido")  # <-- CAMPO NUEVO
+    usuario = st.text_input("Usuario que genera el pedido")
 
-    st.markdown("### Buscar y agregar productos")
+    st.markdown("### Buscar y agregar productos al pedido")
 
     with st.form("form_pedido"):
         cod_o_nombre = st.text_input("Buscar por código o nombre")
@@ -185,90 +184,85 @@ elif pestana == "Generar Pedido":
             st.warning("Producto no encontrado.")
 
     if st.session_state.pedido_actual:
-        st.markdown("### Productos del pedido")
-        st.dataframe(pd.DataFrame(st.session_state.pedido_actual))
+        st.markdown("### Productos agregados")
+        pedido_df = pd.DataFrame(st.session_state.pedido_actual)
+        st.dataframe(pedido_df)
 
-        if st.button("Finalizar pedido"):
+        if st.button("✅ Finalizar pedido"):
             if not usuario:
-                st.warning("⚠️ Debes ingresar el nombre del usuario antes de finalizar el pedido.")
+                st.warning("Debes ingresar el nombre del usuario.")
                 st.stop()
-
-            orden_pintado = []
-            orden_fabricacion = []
-            resumen_pedido = []
 
             fecha_pedido = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             pedidos_sheet = sheet.worksheet("pedidos")
             movimientos_sheet = sheet.worksheet("movimientos")
             inv_bodega2_ws = sheet.worksheet("inventario_bodega2")
 
+            orden_pintado, orden_fabricacion, resumen_pedido = [], [], []
+
             for item in st.session_state.pedido_actual:
                 cod = item["Codigo_Barras"]
                 detalle = item["Detalle"]
-                cantidad_solicitada = item["Cantidad"]
+                cant_pedida = item["Cantidad"]
 
+                # DISPONIBLE EN BODEGA 2
                 disponible_b2 = bodega2_df.loc[bodega2_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
-                restante = cantidad_solicitada - disponible_b2
+                cubierto_b2 = min(disponible_b2, cant_pedida)
+                restante = cant_pedida - cubierto_b2
 
-                cubierto_b2 = min(disponible_b2, cantidad_solicitada)
                 if cubierto_b2 > 0:
-                    # Registrar en 'pedidos'
                     pedidos_sheet.append_row([
                         fecha_pedido, pedido_id, cliente, cod, detalle, cubierto_b2, "Bodega 2"
                     ])
-
-                    # Registrar en 'movimientos'
                     movimientos_sheet.append_row([
-                        fecha_pedido, cod, "Salida", cubierto_b2, "Bodega 2", usuario, f"Pedido {pedido_id} - {cliente}"
+                        fecha_pedido, cod, "Salida", cubierto_b2, "Bodega 2", usuario, f"Pedido {pedido_id}"
                     ])
-
-                    # Actualizar inventario bodega2 en Google Sheets
+                    # ACTUALIZAR STOCK
                     cell = inv_bodega2_ws.find(cod)
                     if cell:
-                        row_idx = cell.row
-                        current_qty = int(inv_bodega2_ws.cell(row_idx, 4).value)  # Columna 'Cantidad'
-                        new_qty = current_qty - cubierto_b2
-                        inv_bodega2_ws.update_cell(row_idx, 4, new_qty)
+                        row = cell.row
+                        qty_actual = int(inv_bodega2_ws.cell(row, 4).value)
+                        inv_bodega2_ws.update_cell(row, 4, qty_actual - cubierto_b2)
 
+                # PINTADO DESDE BODEGA 1
                 disponible_b1 = bodega1_df.loc[bodega1_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
-                pintar = min(restante, disponible_b1) if restante > 0 else 0
+                pintar = min(disponible_b1, restante) if restante > 0 else 0
                 fabricar = max(restante - disponible_b1, 0) if restante > 0 else 0
 
                 if pintar > 0:
-                    orden_pintado.append({
-                        "Codigo_Barras": cod,
-                        "Detalle": detalle,
-                        "Cantidad": pintar
-                    })
                     pedidos_sheet.append_row([
                         fecha_pedido, pedido_id, cliente, cod, detalle, pintar, "Pintado"
                     ])
+                    orden_pintado.append({"Codigo_Barras": cod, "Detalle": detalle, "Cantidad": pintar})
 
                 if fabricar > 0:
-                    orden_fabricacion.append({
-                        "Codigo_Barras": cod,
-                        "Detalle": detalle,
-                        "Cantidad": fabricar
-                    })
                     pedidos_sheet.append_row([
                         fecha_pedido, pedido_id, cliente, cod, detalle, fabricar, "Fabricación"
                     ])
+                    orden_fabricacion.append({"Codigo_Barras": cod, "Detalle": detalle, "Cantidad": fabricar})
 
                 resumen_pedido.append({
                     "Código": cod,
                     "Detalle": detalle,
-                    "Cantidad Pedida": cantidad_solicitada,
-                    "Disponible Bodega 2": disponible_b2,
-                    "Pendiente por Pintar": pintar,
-                    "Orden de Fabricación": fabricar
+                    "Cantidad Pedida": cant_pedida,
+                    "Bodega 2": cubierto_b2,
+                    "Orden Pintado": pintar,
+                    "Orden Fabricación": fabricar
                 })
 
-            if resumen_pedido:
-                st.markdown("### 📋 Resumen del Pedido")
-                resumen_df = pd.DataFrame(resumen_pedido)
-                st.dataframe(resumen_df)
+            st.success("✅ Pedido finalizado y registrado correctamente.")
+            st.markdown("### Resumen del Pedido")
+            st.dataframe(pd.DataFrame(resumen_pedido))
 
-            st.success("✅ Pedido registrado exitosamente.")
+            if orden_pintado:
+                st.markdown("### 🖌️ Orden de Pintado")
+                st.dataframe(pd.DataFrame(orden_pintado))
+
+            if orden_fabricacion:
+                st.markdown("### 🛠️ Orden de Fabricación")
+                st.dataframe(pd.DataFrame(orden_fabricacion))
+
+            # Limpiar pedido actual
             st.session_state.pedido_actual = []
 
 #python -m streamlit run c:/Users/sacor/Downloads/Tablero_Inventario.py
