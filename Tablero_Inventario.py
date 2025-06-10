@@ -239,7 +239,7 @@ elif pestana == "Generar Pedido":
                 st.markdown("### 🏗️ Orden de Fabricación")
                 st.dataframe(pd.DataFrame(orden_fabricacion))
 
-                        pedidos_ws = sheet.worksheet("pedidos")
+                        #pedidos_ws = sheet.worksheet("pedidos")
             fecha_pedido = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             for item in st.session_state.pedido_actual:
