@@ -151,65 +151,62 @@ elif pestana == "Alertas":
     st.dataframe(sin_mov2[['Codigo_Barras', 'Detalle', 'Cantidad']])
     
 # --- PESTAÑA 5: GENERAR PEDIDO ---
+# --- PESTAÑA 5: GENERAR PEDIDO ---
 elif pestana == "Generar Pedido":
-    st.subheader("📝 Generar Pedido")
+    st.header("5. Generar Pedido")
 
-    pedido_id = st.text_input("Identificador del pedido")
-    cliente = st.text_input("Nombre del cliente")
-    usuario = st.text_input("Usuario que genera el pedido")
-
-    st.markdown("### Buscar y agregar productos al pedido")
-
-    with st.form("form_pedido"):
-        cod_o_nombre = st.text_input("Buscar por código o nombre")
-        cantidad = st.number_input("Cantidad solicitada", min_value=1, step=1)
-        agregar = st.form_submit_button("Agregar al pedido")
-
-    if 'pedido_actual' not in st.session_state:
-        st.session_state.pedido_actual = []
-
-    if agregar and cod_o_nombre:
-        filtro = productos_df[
-            productos_df['Codigo_Barras'].astype(str).str.contains(cod_o_nombre, case=False) |
-            productos_df['Detalle'].str.contains(cod_o_nombre, case=False)
+    st.write("### Buscar producto")
+    search_term = st.text_input("Buscar por código o detalle:")
+    if search_term:
+        resultados = productos_df[
+            productos_df['Codigo_Barras'].str.contains(search_term, case=False) |
+            productos_df['Detalle'].str.contains(search_term, case=False)
         ]
-        if not filtro.empty:
-            producto = filtro.iloc[0]
-            st.session_state.pedido_actual.append({
-                "Codigo_Barras": producto["Codigo_Barras"],
-                "Detalle": producto["Detalle"],
-                "Cantidad": cantidad
-            })
-        else:
-            st.warning("Producto no encontrado.")
+        st.dataframe(resultados[['Codigo_Barras', 'Detalle']])
+    else:
+        resultados = productos_df
+
+    st.write("### Agregar producto al pedido")
+    with st.form("agregar_pedido_form"):
+        cod_barras = st.text_input("Código de barras")
+        cantidad = st.number_input("Cantidad", min_value=1, step=1)
+        submitted = st.form_submit_button("Agregar al pedido")
+        if submitted:
+            producto = productos_df[productos_df['Codigo_Barras'] == cod_barras]
+            if not producto.empty:
+                detalle = producto['Detalle'].values[0]
+                st.session_state.pedido_actual.append({
+                    "Codigo_Barras": cod_barras,
+                    "Detalle": detalle,
+                    "Cantidad": cantidad
+                })
+            else:
+                st.warning("Producto no encontrado.")
 
     if st.session_state.pedido_actual:
-        st.markdown("### Productos agregados")
-        pedido_df = pd.DataFrame(st.session_state.pedido_actual)
-        st.dataframe(pedido_df)
+        st.write("### Pedido actual")
+        st.dataframe(pd.DataFrame(st.session_state.pedido_actual))
 
-        if st.button("✅ Finalizar pedido"):
-            if not usuario:
-                st.warning("Debes ingresar el nombre del usuario.")
-                st.stop()
+        cliente = st.text_input("Cliente", "Consumidor final")
 
-            fecha_pedido = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            pedidos_sheet = sheet.worksheet("pedidos")
-            movimientos_sheet = sheet.worksheet("movimientos")
-            inv_bodega2_ws = sheet.worksheet("inventario_bodega2")
-
-            orden_pintado, orden_fabricacion, resumen_pedido = [], [], []
+        if st.button("Finalizar pedido"):
+            fecha_pedido = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            pedido_id = f"PED-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            resumen_pedido = []
+            orden_pintado = []
+            orden_fabricacion = []
 
             for item in st.session_state.pedido_actual:
                 cod = item["Codigo_Barras"]
                 detalle = item["Detalle"]
                 cant_pedida = item["Cantidad"]
 
-                # DISPONIBLE EN BODEGA 2
+                cod_base = cod.split()[0]  # Extrae código base sin color
                 disponible_b2 = bodega2_df.loc[bodega2_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
                 cubierto_b2 = min(disponible_b2, cant_pedida)
                 restante = cant_pedida - cubierto_b2
 
+                # Registrar salida desde Bodega 2
                 if cubierto_b2 > 0:
                     pedidos_sheet.append_row([
                         fecha_pedido, pedido_id, cliente, cod, detalle, cubierto_b2, "Bodega 2"
@@ -217,32 +214,44 @@ elif pestana == "Generar Pedido":
                     movimientos_sheet.append_row([
                         fecha_pedido, cod, "Salida", cubierto_b2, "Bodega 2", usuario, f"Pedido {pedido_id}"
                     ])
-                    # ACTUALIZAR STOCK
+                    # Actualizar inventario bodega 2
                     cell = inv_bodega2_ws.find(cod)
                     if cell:
                         row = cell.row
                         qty_actual = int(inv_bodega2_ws.cell(row, 4).value)
                         inv_bodega2_ws.update_cell(row, 4, qty_actual - cubierto_b2)
 
-                # PINTADO DESDE BODEGA 1
-                disponible_b1 = bodega1_df.loc[bodega1_df['Codigo_Barras'] == cod, 'Cantidad'].sum()
+                # Revisión en Bodega 1 con código base
+                disponible_b1 = bodega1_df.loc[
+                    bodega1_df['Codigo_Barras'].str.startswith(cod_base), 'Cantidad'
+                ].sum()
+
                 pintar = min(disponible_b1, restante) if restante > 0 else 0
                 fabricar = max(restante - disponible_b1, 0) if restante > 0 else 0
 
                 if pintar > 0:
                     pedidos_sheet.append_row([
-                        fecha_pedido, pedido_id, cliente, cod, detalle, pintar, "Pintado"
+                        fecha_pedido, pedido_id, cliente, cod_base, f"Pintar {detalle}", pintar, "Pintado"
                     ])
-                    orden_pintado.append({"Codigo_Barras": cod, "Detalle": detalle, "Cantidad": pintar})
+                    orden_pintado.append({
+                        "Codigo_Barras": cod_base,
+                        "Detalle": f"Pintar {detalle}",
+                        "Cantidad": pintar
+                    })
 
                 if fabricar > 0:
                     pedidos_sheet.append_row([
-                        fecha_pedido, pedido_id, cliente, cod, detalle, fabricar, "Fabricación"
+                        fecha_pedido, pedido_id, cliente, cod_base, f"Fabricar {detalle}", fabricar, "Fabricación"
                     ])
-                    orden_fabricacion.append({"Codigo_Barras": cod, "Detalle": detalle, "Cantidad": fabricar})
+                    orden_fabricacion.append({
+                        "Codigo_Barras": cod_base,
+                        "Detalle": f"Fabricar {detalle}",
+                        "Cantidad": fabricar
+                    })
 
                 resumen_pedido.append({
-                    "Código": cod,
+                    "Código Pedido": cod,
+                    "Código Base": cod_base,
                     "Detalle": detalle,
                     "Cantidad Pedida": cant_pedida,
                     "Bodega 2": cubierto_b2,
@@ -250,19 +259,20 @@ elif pestana == "Generar Pedido":
                     "Orden Fabricación": fabricar
                 })
 
-            st.success("✅ Pedido finalizado y registrado correctamente.")
-            st.markdown("### Resumen del Pedido")
+            # Mostrar resumen
+            st.write("### Resumen del Pedido")
             st.dataframe(pd.DataFrame(resumen_pedido))
 
             if orden_pintado:
-                st.markdown("### 🖌️ Orden de Pintado")
+                st.write("### Órdenes de Pintado")
                 st.dataframe(pd.DataFrame(orden_pintado))
 
             if orden_fabricacion:
-                st.markdown("### 🛠️ Orden de Fabricación")
+                st.write("### Órdenes de Fabricación")
                 st.dataframe(pd.DataFrame(orden_fabricacion))
 
-            # Limpiar pedido actual
+            # Limpiar pedido
             st.session_state.pedido_actual = []
+
 
 #python -m streamlit run c:/Users/sacor/Downloads/Tablero_Inventario.py
