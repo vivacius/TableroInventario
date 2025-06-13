@@ -26,8 +26,8 @@ productos_df = pd.DataFrame(sheet.worksheet("productos").get_all_records())
 bodega1_df = pd.DataFrame(sheet.worksheet("inventario_bodega1").get_all_records())
 bodega2_df = pd.DataFrame(sheet.worksheet("inventario_bodega2").get_all_records())
 movimientos_df = pd.DataFrame(sheet.worksheet("movimientos").get_all_records())
-pedidos_df = pd.DataFrame(sheet.worksheet("pedidos").get_all_records())
-pedidos_sheet = sheet.worksheet("pedidos")
+#pedidos_df = pd.DataFrame(sheet.worksheet("pedidos").get_all_records())
+#pedidos_sheet = sheet.worksheet("pedidos")
 
 # --- FORMATO DE FECHA ---
 movimientos_df["Fecha y Hora"] = pd.to_datetime(movimientos_df["Fecha y Hora"], errors='coerce')
